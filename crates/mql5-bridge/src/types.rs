@@ -2,6 +2,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 #[repr(C)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Signal {
     None = 0,
     Buy = 1,
@@ -18,5 +19,6 @@ pub unsafe fn cstr_to_str(ptr: *const c_char) -> &'static str {
     if ptr.is_null() {
         return "";
     }
-    CStr::from_ptr(ptr).to_str().unwrap_or("")
+    // SAFETY: Caller guarantees ptr is valid and null-terminated.
+    unsafe { CStr::from_ptr(ptr).to_str().unwrap_or("") }
 }

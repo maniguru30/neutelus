@@ -99,7 +99,7 @@ fn parse_config(config_json: &str) -> StrategyConfig {
     cfg
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nt_init(config_json: *const c_char) -> i32 {
     catch_panic(|| {
         init_registry();
@@ -130,14 +130,14 @@ pub extern "C" fn nt_init(config_json: *const c_char) -> i32 {
     .unwrap_or(-1)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nt_deinit(handle: i32) {
     let _ = catch_panic(|| {
         destroy_engine(handle);
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nt_on_tick(
     handle: i32,
     symbol: *const c_char,
@@ -153,7 +153,7 @@ pub extern "C" fn nt_on_tick(
     .unwrap_or(Signal::Error as i32)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nt_on_bar(
     handle: i32,
     symbol: *const c_char,
@@ -172,7 +172,7 @@ pub extern "C" fn nt_on_bar(
     .unwrap_or(Signal::Error as i32)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nt_on_imbalance(
     handle: i32,
     symbol: *const c_char,
@@ -186,7 +186,7 @@ pub extern "C" fn nt_on_imbalance(
     .unwrap_or(Signal::Error as i32)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nt_on_orderflow(
     handle: i32,
     symbol: *const c_char,
@@ -201,7 +201,7 @@ pub extern "C" fn nt_on_orderflow(
     .unwrap_or(Signal::Error as i32)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nt_signal(handle: i32, symbol: *const c_char) -> i32 {
     catch_panic(|| {
         let sym = unsafe { cstr_to_str(symbol) };
@@ -211,13 +211,13 @@ pub extern "C" fn nt_signal(handle: i32, symbol: *const c_char) -> i32 {
     .unwrap_or(Signal::Error as i32)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nt_version() -> *const c_char {
     let version = CString::new(env!("CARGO_PKG_VERSION")).unwrap();
     version.into_raw()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nt_free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
         unsafe {
