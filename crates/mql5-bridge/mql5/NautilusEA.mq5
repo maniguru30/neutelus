@@ -223,8 +223,15 @@ void OnTick() {
          dir = gLastTickDir;
       }
 
-      double delta = dir * (double)tick.volume;
+      double delta = (double)dir; // unit delta (tick.volume is often 0 in tester)
+      if (InpVerboseLog) {
+         Print(StringFormat("OF: dir=%d delta=%.2f last=%.5f gLast=%.5f",
+            dir, delta, last, gLastTickPrice));
+      }
       signal = nt_on_orderflow(gEngineHandle, gSymbolBytes, delta, last);
+      if (InpVerboseLog) {
+         Print(StringFormat("OF: signal=%d", signal));
+      }
 
       gLastTickPrice = last;
       gLastTickDir = dir;
