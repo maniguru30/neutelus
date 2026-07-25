@@ -1,0 +1,35 @@
+name: Build MQL5 Bridge
+
+on:
+  push:
+    paths:
+      - 'crates/mql5-bridge/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build DLL
+        run: cargo build --manifest-path Cargo.toml -p nautilus-mql5-bridge --release
+
+      - name: Upload DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: nautilus_mql5_bridge
+          path: target/release/nautilus_mql5_bridge.dll
+
+      - name: Upload EA
+        uses: actions/upload-artifact@v4
+        with:
+          name: NautilusEA
+          path: crates/mql5-bridge/mql5/NautilusEA.mq5

@@ -1,0 +1,22 @@
+[package]
+name = "nautilus-mql5-bridge"
+version = "0.1.0"
+edition = "2024"
+description = "MQL5 Expert Advisor bridge for NautilusTrader HFT engine"
+license = "LGPL-3.0-or-later"
+
+[lib]
+name = "nautilus_mql5_bridge"
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-trading = { path = "../trading" }
+
+serde_json = { workspace = true }
+
+[features]
+default = []
