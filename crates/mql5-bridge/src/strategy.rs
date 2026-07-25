@@ -146,7 +146,6 @@ impl TradingStrategy for EMACrossStrategy {
 pub struct RSIMeanReversionStrategy {
     name: String,
     symbols: HashMap<String, RSIState>,
-    period: usize,
     oversold: f64,
     overbought: f64,
 }
@@ -222,7 +221,6 @@ impl RSIMeanReversionStrategy {
         Self {
             name: format!("RSI_{}_{}_{}", period, oversold as u32, overbought as u32),
             symbols: state,
-            period,
             oversold,
             overbought,
         }

@@ -125,7 +125,7 @@ pub extern "C" fn nt_init(config_json: *const c_char) -> i32 {
             "ema_cross" | _ => Box::new(EMACrossStrategy::new(syms, cfg.fast_period, cfg.slow_period)),
         };
 
-        create_engine(strategy, cfg.symbols)
+        create_engine(strategy)
     })
     .unwrap_or(-1)
 }

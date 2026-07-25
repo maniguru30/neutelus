@@ -12,7 +12,6 @@ pub(crate) struct EngineRegistry {
 }
 
 struct EngineInstance {
-    symbols: Vec<String>,
     strategy: Box<dyn TradingStrategy + Send>,
 }
 
@@ -24,18 +23,11 @@ impl EngineRegistry {
         }
     }
 
-    fn register(&mut self, strategy: Box<dyn TradingStrategy + Send>, symbols: Vec<String>) -> i32 {
+    fn register(&mut self, strategy: Box<dyn TradingStrategy + Send>) -> i32 {
         let id = self.next_id;
         self.next_id += 1;
-        self.engines.insert(
-            id,
-            EngineInstance { symbols, strategy },
-        );
+        self.engines.insert(id, EngineInstance { strategy });
         id
-    }
-
-    fn get(&self, id: i32) -> Option<&EngineInstance> {
-        self.engines.get(&id)
     }
 
     fn get_mut(&mut self, id: i32) -> Option<&mut EngineInstance> {
@@ -58,13 +50,12 @@ pub(crate) fn init_registry() {
 
 pub(crate) fn create_engine(
     strategy: Box<dyn TradingStrategy + Send>,
-    symbols: Vec<String>,
 ) -> i32 {
     let mut reg = ENGINES
         .lock()
         .expect("ENGINES mutex poisoned in create_engine");
     let registry = reg.as_mut().expect("Engine registry not initialized");
-    registry.register(strategy, symbols)
+    registry.register(strategy)
 }
 
 pub(crate) fn destroy_engine(handle: i32) -> bool {
