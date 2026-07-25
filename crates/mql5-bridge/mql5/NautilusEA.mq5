@@ -214,7 +214,7 @@ void OnTick() {
 
    // ── Order Flow (Cumulative Delta) ────────────────────────────
    if (InpStrategy == STRATEGY_ORDERFLOW) {
-      double last = SymbolInfoDouble(_Symbol, SYMBOL_LAST);
+      double last = tick.last; // SymbolInfoDouble returns 0 in tester
       int dir = 0;
       if (last > gLastTickPrice) {
          dir = 1;
