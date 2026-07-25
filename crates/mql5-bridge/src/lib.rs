@@ -49,7 +49,7 @@ impl Default for StrategyConfig {
             entry_threshold: 0.3,
             exit_threshold: 0.1,
             divergence_lookback: 50,
-            divergence_threshold: 30.0,
+            divergence_threshold: 5.0,
         }
     }
 }

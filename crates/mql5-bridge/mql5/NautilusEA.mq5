@@ -73,7 +73,7 @@ input double            InpExitThreshold   = 0.1;    // Exit threshold
 
 input group "=== Order Flow (Cumulative Delta) ==="
 input int               InpDivergenceLookback = 50;   // Tick window
-input double            InpDivergenceThreshold = 30.0;// Entry threshold (cumulative delta value)
+input double            InpDivergenceThreshold = 5.0; // Entry threshold (cumulative delta value)
 
 input group "=== Risk Management ==="
 input double            InpLotSize      = 0.1;        // Fixed lot size

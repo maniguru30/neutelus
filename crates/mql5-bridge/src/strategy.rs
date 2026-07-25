@@ -442,7 +442,7 @@ impl OrderFlowStrategy {
         lookback: usize,
         divergence_threshold: f64,
     ) -> Self {
-        let entry = if divergence_threshold > 0.0 { divergence_threshold } else { 30.0 };
+        let entry = if divergence_threshold > 0.0 { divergence_threshold } else { 5.0 };
         let exit = entry * 0.3;
         let mut state = HashMap::new();
         for sym in &symbols {
