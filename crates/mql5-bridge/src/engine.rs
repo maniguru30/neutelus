@@ -6,7 +6,7 @@ use crate::types::Signal;
 
 static ENGINES: Mutex<Option<EngineRegistry>> = Mutex::new(None);
 
-pub struct EngineRegistry {
+pub(crate) struct EngineRegistry {
     engines: HashMap<i32, EngineInstance>,
     next_id: i32,
 }
@@ -47,7 +47,7 @@ impl EngineRegistry {
     }
 }
 
-pub fn init_registry() {
+pub(crate) fn init_registry() {
     let mut reg = ENGINES
         .lock()
         .expect("ENGINES mutex poisoned in init_registry");
@@ -56,7 +56,7 @@ pub fn init_registry() {
     }
 }
 
-pub fn create_engine(
+pub(crate) fn create_engine(
     strategy: Box<dyn TradingStrategy + Send>,
     symbols: Vec<String>,
 ) -> i32 {
@@ -67,7 +67,7 @@ pub fn create_engine(
     registry.register(strategy, symbols)
 }
 
-pub fn destroy_engine(handle: i32) -> bool {
+pub(crate) fn destroy_engine(handle: i32) -> bool {
     let mut reg = ENGINES
         .lock()
         .expect("ENGINES mutex poisoned in destroy_engine");
@@ -75,7 +75,7 @@ pub fn destroy_engine(handle: i32) -> bool {
     registry.remove(handle)
 }
 
-pub fn process_tick(handle: i32, symbol: &str, bid: f64, ask: f64, volume: f64) -> Signal {
+pub(crate) fn process_tick(handle: i32, symbol: &str, bid: f64, ask: f64, volume: f64) -> Signal {
     let mut reg = ENGINES
         .lock()
         .expect("ENGINES mutex poisoned in process_tick");
@@ -87,7 +87,7 @@ pub fn process_tick(handle: i32, symbol: &str, bid: f64, ask: f64, volume: f64) 
     }
 }
 
-pub fn process_bar(
+pub(crate) fn process_bar(
     handle: i32,
     symbol: &str,
     open: f64,
@@ -110,7 +110,7 @@ pub fn process_bar(
     }
 }
 
-pub fn process_imbalance(handle: i32, symbol: &str, imbalance: f64) -> Signal {
+pub(crate) fn process_imbalance(handle: i32, symbol: &str, imbalance: f64) -> Signal {
     let mut reg = ENGINES
         .lock()
         .expect("ENGINES mutex poisoned in process_imbalance");
@@ -122,7 +122,7 @@ pub fn process_imbalance(handle: i32, symbol: &str, imbalance: f64) -> Signal {
     }
 }
 
-pub fn process_orderflow(handle: i32, symbol: &str, delta: f64, volume: f64) -> Signal {
+pub(crate) fn process_orderflow(handle: i32, symbol: &str, delta: f64, volume: f64) -> Signal {
     let mut reg = ENGINES
         .lock()
         .expect("ENGINES mutex poisoned in process_orderflow");
@@ -134,7 +134,7 @@ pub fn process_orderflow(handle: i32, symbol: &str, delta: f64, volume: f64) -> 
     }
 }
 
-pub fn get_signal(handle: i32, symbol: &str) -> Signal {
+pub(crate) fn get_signal(handle: i32, symbol: &str) -> Signal {
     let mut reg = ENGINES
         .lock()
         .expect("ENGINES mutex poisoned in get_signal");
