@@ -3,299 +3,13 @@ use std::collections::HashMap;
 use crate::types::Signal;
 
 pub trait TradingStrategy: Send {
-    fn on_tick(&mut self, symbol: &str, bid: f64, ask: f64, volume: f64) -> Signal;
-    fn on_bar(
-        &mut self,
-        symbol: &str,
-        open: f64,
-        high: f64,
-        low: f64,
-        close: f64,
-        volume: f64,
-        timestamp_ns: i64,
-    ) -> Signal;
     fn on_imbalance(&mut self, _symbol: &str, _imbalance: f64) -> Signal {
         Signal::None
     }
     fn on_orderflow(&mut self, _symbol: &str, _delta: f64, _volume: f64) -> Signal {
         Signal::None
     }
-    fn signal(&mut self, symbol: &str) -> Signal;
     fn name(&self) -> &str;
-}
-
-struct EMACrossState {
-    fast_ema: f64,
-    slow_ema: f64,
-    fast_alpha: f64,
-    slow_alpha: f64,
-    prev_fast: f64,
-    prev_slow: f64,
-    initialized: bool,
-    current_signal: Signal,
-}
-
-impl EMACrossState {
-    fn new(fast_period: usize, slow_period: usize) -> Self {
-        Self {
-            fast_ema: 0.0,
-            slow_ema: 0.0,
-            fast_alpha: 2.0 / (fast_period as f64 + 1.0),
-            slow_alpha: 2.0 / (slow_period as f64 + 1.0),
-            prev_fast: 0.0,
-            prev_slow: 0.0,
-            initialized: false,
-            current_signal: Signal::None,
-        }
-    }
-
-    fn update(&mut self, price: f64) {
-        if !self.initialized {
-            self.fast_ema = price;
-            self.slow_ema = price;
-            self.initialized = true;
-            return;
-        }
-
-        self.prev_fast = self.fast_ema;
-        self.prev_slow = self.slow_ema;
-
-        self.fast_ema = price * self.fast_alpha + self.fast_ema * (1.0 - self.fast_alpha);
-        self.slow_ema = price * self.slow_alpha + self.slow_ema * (1.0 - self.slow_alpha);
-
-        if self.prev_fast <= self.prev_slow && self.fast_ema > self.slow_ema {
-            self.current_signal = Signal::Buy;
-        } else if self.prev_fast >= self.prev_slow && self.fast_ema < self.slow_ema {
-            self.current_signal = Signal::Sell;
-        } else if self.current_signal == Signal::Buy
-            && self.fast_ema < self.slow_ema
-        {
-            self.current_signal = Signal::Exit;
-        } else if self.current_signal == Signal::Sell
-            && self.fast_ema > self.slow_ema
-        {
-            self.current_signal = Signal::Exit;
-        }
-    }
-
-}
-
-pub struct EMACrossStrategy {
-    name: String,
-    symbols: HashMap<String, EMACrossState>,
-}
-
-impl EMACrossStrategy {
-    pub fn new(symbols: Vec<String>, fast_period: usize, slow_period: usize) -> Self {
-        let mut state = HashMap::new();
-        for sym in &symbols {
-            state.insert(
-                sym.clone(),
-                EMACrossState::new(fast_period, slow_period),
-            );
-        }
-
-        Self {
-            name: format!("EMACross_{}_{}", fast_period, slow_period),
-            symbols: state,
-        }
-    }
-}
-
-impl TradingStrategy for EMACrossStrategy {
-    fn on_tick(&mut self, symbol: &str, bid: f64, ask: f64, _: f64) -> Signal {
-        if let Some(state) = self.symbols.get_mut(symbol) {
-            let mid = (bid + ask) / 2.0;
-            state.update(mid);
-            state.current_signal
-        } else {
-            Signal::None
-        }
-    }
-
-    fn on_bar(
-        &mut self,
-        symbol: &str,
-        _open: f64,
-        _high: f64,
-        _low: f64,
-        close: f64,
-        _volume: f64,
-        _timestamp_ns: i64,
-    ) -> Signal {
-        if let Some(state) = self.symbols.get_mut(symbol) {
-            state.update(close);
-            state.current_signal
-        } else {
-            Signal::None
-        }
-    }
-
-    fn signal(&mut self, symbol: &str) -> Signal {
-        self.symbols
-            .get(symbol)
-            .map(|s| s.current_signal)
-            .unwrap_or(Signal::None)
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-pub struct RSIMeanReversionStrategy {
-    name: String,
-    symbols: HashMap<String, RSIState>,
-    oversold: f64,
-    overbought: f64,
-}
-
-struct RSIState {
-    period: usize,
-    gains: Vec<f64>,
-    losses: Vec<f64>,
-    avg_gain: f64,
-    avg_loss: f64,
-    rsi: f64,
-    initialized: bool,
-    current_signal: Signal,
-    prev_price: Option<f64>,
-}
-
-impl RSIState {
-    fn new(period: usize) -> Self {
-        Self {
-            period,
-            gains: Vec::with_capacity(period),
-            losses: Vec::with_capacity(period),
-            avg_gain: 0.0,
-            avg_loss: 0.0,
-            rsi: 50.0,
-            initialized: false,
-            current_signal: Signal::None,
-            prev_price: None,
-        }
-    }
-
-    fn update(&mut self, price: f64) {
-        if let Some(prev) = self.prev_price {
-            let change = price - prev;
-            let gain = change.max(0.0);
-            let loss = (-change).max(0.0);
-
-            if !self.initialized {
-                self.gains.push(gain);
-                self.losses.push(loss);
-
-                if self.gains.len() >= self.period {
-                    self.avg_gain = self.gains.iter().sum::<f64>() / self.period as f64;
-                    self.avg_loss = self.losses.iter().sum::<f64>() / self.period as f64;
-                    self.initialized = true;
-                }
-            } else {
-                self.avg_gain =
-                    (self.avg_gain * (self.period as f64 - 1.0) + gain) / self.period as f64;
-                self.avg_loss =
-                    (self.avg_loss * (self.period as f64 - 1.0) + loss) / self.period as f64;
-
-                self.rsi = if self.avg_loss == 0.0 {
-                    100.0
-                } else {
-                    let rs = self.avg_gain / self.avg_loss;
-                    100.0 - (100.0 / (1.0 + rs))
-                };
-            }
-        }
-
-        self.prev_price = Some(price);
-    }
-}
-
-impl RSIMeanReversionStrategy {
-    pub fn new(symbols: Vec<String>, period: usize, oversold: f64, overbought: f64) -> Self {
-        let mut state = HashMap::new();
-        for sym in &symbols {
-            state.insert(sym.clone(), RSIState::new(period));
-        }
-
-        Self {
-            name: format!("RSI_{}_{}_{}", period, oversold as u32, overbought as u32),
-            symbols: state,
-            oversold,
-            overbought,
-        }
-    }
-}
-
-impl TradingStrategy for RSIMeanReversionStrategy {
-    fn on_tick(&mut self, symbol: &str, bid: f64, ask: f64, _: f64) -> Signal {
-        if let Some(state) = self.symbols.get_mut(symbol) {
-            let mid = (bid + ask) / 2.0;
-            state.update(mid);
-
-            if !state.initialized {
-                return Signal::None;
-            }
-
-            if state.rsi < self.oversold && state.current_signal != Signal::Buy {
-                state.current_signal = Signal::Buy;
-            } else if state.rsi > self.overbought && state.current_signal != Signal::Sell {
-                state.current_signal = Signal::Sell;
-            } else if state.rsi > 50.0 && state.current_signal == Signal::Buy {
-                state.current_signal = Signal::Exit;
-            } else if state.rsi < 50.0 && state.current_signal == Signal::Sell {
-                state.current_signal = Signal::Exit;
-            }
-
-            state.current_signal
-        } else {
-            Signal::None
-        }
-    }
-
-    fn on_bar(
-        &mut self,
-        symbol: &str,
-        _open: f64,
-        _high: f64,
-        _low: f64,
-        close: f64,
-        _volume: f64,
-        _timestamp_ns: i64,
-    ) -> Signal {
-        if let Some(state) = self.symbols.get_mut(symbol) {
-            state.update(close);
-
-            if !state.initialized {
-                return Signal::None;
-            }
-
-            if state.rsi < self.oversold && state.current_signal != Signal::Buy {
-                state.current_signal = Signal::Buy;
-            } else if state.rsi > self.overbought && state.current_signal != Signal::Sell {
-                state.current_signal = Signal::Sell;
-            } else if state.rsi > 50.0 && state.current_signal == Signal::Buy {
-                state.current_signal = Signal::Exit;
-            } else if state.rsi < 50.0 && state.current_signal == Signal::Sell {
-                state.current_signal = Signal::Exit;
-            }
-
-            state.current_signal
-        } else {
-            Signal::None
-        }
-    }
-
-    fn signal(&mut self, symbol: &str) -> Signal {
-        self.symbols
-            .get(symbol)
-            .map(|s| s.current_signal)
-            .unwrap_or(Signal::None)
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
 }
 
 // ── Order Book Imbalance Strategy ─────────────────────────────────
@@ -346,23 +60,6 @@ impl OrderBookImbalanceStrategy {
 }
 
 impl TradingStrategy for OrderBookImbalanceStrategy {
-    fn on_tick(&mut self, _symbol: &str, _bid: f64, _ask: f64, _volume: f64) -> Signal {
-        Signal::None
-    }
-
-    fn on_bar(
-        &mut self,
-        _symbol: &str,
-        _open: f64,
-        _high: f64,
-        _low: f64,
-        _close: f64,
-        _volume: f64,
-        _timestamp_ns: i64,
-    ) -> Signal {
-        Signal::None
-    }
-
     fn on_imbalance(&mut self, symbol: &str, imbalance: f64) -> Signal {
         if let Some(state) = self.symbols.get_mut(symbol) {
             if !state.initialized {
@@ -401,24 +98,12 @@ impl TradingStrategy for OrderBookImbalanceStrategy {
         }
     }
 
-    fn signal(&mut self, symbol: &str) -> Signal {
-        self.symbols
-            .get(symbol)
-            .map(|s| s.current_signal)
-            .unwrap_or(Signal::None)
-    }
-
     fn name(&self) -> &str {
         &self.name
     }
 }
 
 // ── Order Flow Strategy (Cumulative Delta) ───────────────────────
-//
-// Tracks cumulative delta (buy volume - sell volume) over a sliding
-// window of ticks. Enters long when cum-delta exceeds a bullish
-// threshold, short when it drops below a bearish threshold, and
-// exits when it neutralizes back toward zero.
 
 pub struct OrderFlowStrategy {
     name: String,
@@ -468,26 +153,8 @@ impl OrderFlowStrategy {
 }
 
 impl TradingStrategy for OrderFlowStrategy {
-    fn on_tick(&mut self, _symbol: &str, _bid: f64, _ask: f64, _volume: f64) -> Signal {
-        Signal::None
-    }
-
-    fn on_bar(
-        &mut self,
-        _symbol: &str,
-        _open: f64,
-        _high: f64,
-        _low: f64,
-        _close: f64,
-        _volume: f64,
-        _timestamp_ns: i64,
-    ) -> Signal {
-        Signal::None
-    }
-
     fn on_orderflow(&mut self, symbol: &str, delta: f64, _price: f64) -> Signal {
         if let Some(state) = self.symbols.get_mut(symbol) {
-            // Sliding window: remove oldest value, add newest
             state.cum_delta -= state.deltas[state.idx];
             state.deltas[state.idx] = delta;
             state.cum_delta += delta;
@@ -526,13 +193,6 @@ impl TradingStrategy for OrderFlowStrategy {
         } else {
             Signal::None
         }
-    }
-
-    fn signal(&mut self, symbol: &str) -> Signal {
-        self.symbols
-            .get(symbol)
-            .map(|s| s.current_signal)
-            .unwrap_or(Signal::None)
     }
 
     fn name(&self) -> &str {

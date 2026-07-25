@@ -66,41 +66,6 @@ pub(crate) fn destroy_engine(handle: i32) -> bool {
     registry.remove(handle)
 }
 
-pub(crate) fn process_tick(handle: i32, symbol: &str, bid: f64, ask: f64, volume: f64) -> Signal {
-    let mut reg = ENGINES
-        .lock()
-        .expect("ENGINES mutex poisoned in process_tick");
-    let registry = reg.as_mut().expect("Engine registry not initialized");
-    if let Some(instance) = registry.get_mut(handle) {
-        instance.strategy.on_tick(symbol, bid, ask, volume)
-    } else {
-        Signal::Error
-    }
-}
-
-pub(crate) fn process_bar(
-    handle: i32,
-    symbol: &str,
-    open: f64,
-    high: f64,
-    low: f64,
-    close: f64,
-    volume: f64,
-    timestamp_ns: i64,
-) -> Signal {
-    let mut reg = ENGINES
-        .lock()
-        .expect("ENGINES mutex poisoned in process_bar");
-    let registry = reg.as_mut().expect("Engine registry not initialized");
-    if let Some(instance) = registry.get_mut(handle) {
-        instance
-            .strategy
-            .on_bar(symbol, open, high, low, close, volume, timestamp_ns)
-    } else {
-        Signal::Error
-    }
-}
-
 pub(crate) fn process_imbalance(handle: i32, symbol: &str, imbalance: f64) -> Signal {
     let mut reg = ENGINES
         .lock()
@@ -120,18 +85,6 @@ pub(crate) fn process_orderflow(handle: i32, symbol: &str, delta: f64, volume: f
     let registry = reg.as_mut().expect("Engine registry not initialized");
     if let Some(instance) = registry.get_mut(handle) {
         instance.strategy.on_orderflow(symbol, delta, volume)
-    } else {
-        Signal::Error
-    }
-}
-
-pub(crate) fn get_signal(handle: i32, symbol: &str) -> Signal {
-    let mut reg = ENGINES
-        .lock()
-        .expect("ENGINES mutex poisoned in get_signal");
-    let registry = reg.as_mut().expect("Engine registry not initialized");
-    if let Some(instance) = registry.get_mut(handle) {
-        instance.strategy.signal(symbol)
     } else {
         Signal::Error
     }
