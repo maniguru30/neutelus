@@ -112,6 +112,7 @@ bool        gInitialized   = false;
 // Order book & order flow
 double      gLastTickPrice = 0;
 int         gLastTickDir   = 0;
+int         gDebugTicks    = 0; // debug counter
 
 // Byte arrays for DLL calls (MT5 x64 passes string as UTF-16, so we use uchar[])
 uchar       gSymbolBytes[];
@@ -224,14 +225,15 @@ void OnTick() {
       }
 
       double delta = (double)dir; // unit delta (tick.volume is often 0 in tester)
-      if (InpVerboseLog) {
+      if (InpVerboseLog || gDebugTicks < 10) {
          Print(StringFormat("OF: dir=%d delta=%.2f last=%.5f gLast=%.5f",
             dir, delta, last, gLastTickPrice));
       }
       signal = nt_on_orderflow(gEngineHandle, gSymbolBytes, delta, last);
-      if (InpVerboseLog) {
-         Print(StringFormat("OF: signal=%d", signal));
+      if (InpVerboseLog || gDebugTicks < 10) {
+         Print(StringFormat("OF: signal=%d idx=%d", signal, gDebugTicks));
       }
+      gDebugTicks++;
 
       gLastTickPrice = last;
       gLastTickDir = dir;
