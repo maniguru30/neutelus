@@ -17,14 +17,16 @@
 //+------------------------------------------------------------------+
 //| DLL imports                                                      |
 //+------------------------------------------------------------------+
+// NOTE: uchar& arr[] forces MT5 to pass raw UTF-8 bytes (not UTF-16 wchar_t)
+// which matches our Rust DLL's *const c_char parameters.
 #import "nautilus_mql5_bridge.dll"
-int   nt_init(string config_json);
+int   nt_init(uchar &config_json[]);
 void  nt_deinit(int handle);
-int   nt_on_tick(int handle, string symbol, double bid, double ask, double volume);
-int   nt_on_bar(int handle, string symbol, double open, double high, double low, double close, double volume, long timestamp_ns);
-int   nt_on_imbalance(int handle, string symbol, double imbalance);
-int   nt_on_orderflow(int handle, string symbol, double delta, double volume);
-int   nt_signal(int handle, string symbol);
+int   nt_on_tick(int handle, uchar &symbol[], double bid, double ask, double volume);
+int   nt_on_bar(int handle, uchar &symbol[], double open, double high, double low, double close, double volume, long timestamp_ns);
+int   nt_on_imbalance(int handle, uchar &symbol[], double imbalance);
+int   nt_on_orderflow(int handle, uchar &symbol[], double delta, double volume);
+int   nt_signal(int handle, uchar &symbol[]);
 #import
 
 //+------------------------------------------------------------------+
@@ -41,10 +43,10 @@ enum ENUM_SIGNAL {
 };
 
 enum ENUM_STRATEGY_TYPE {
-   STRATEGY_EMA_CROSS,           // EMA Cross (Fast/Slow)
-   STRATEGY_RSI,                 // RSI Mean Reversion
-   STRATEGY_ORDERBOOK_IMBALANCE, // Order Book Imbalance
-   STRATEGY_ORDERFLOW            // Order Flow (Cumulative Delta)
+   STRATEGY_ORDERFLOW,            // Order Flow (Cumulative Delta) [HFT default]
+   STRATEGY_ORDERBOOK_IMBALANCE,  // Order Book Imbalance
+   STRATEGY_EMA_CROSS,            // EMA Cross (Fast/Slow)
+   STRATEGY_RSI                   // RSI Mean Reversion
 };
 
 enum ENUM_RISK_MODE {
@@ -110,6 +112,9 @@ bool        gInitialized   = false;
 double      gLastTickPrice = 0;
 int         gLastTickDir   = 0;
 
+// Byte arrays for DLL calls (MT5 x64 passes string as UTF-16, so we use uchar[])
+uchar       gSymbolBytes[];
+
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
 //+------------------------------------------------------------------+
@@ -120,12 +125,17 @@ int OnInit() {
    }
    gSymbol.RefreshRates();
 
+   // Convert _Symbol to UTF-8 byte array for DLL calls
+   StringToCharArray(_Symbol, gSymbolBytes);
+
    string config = InpConfig_;
    if (config == "") {
       config = BuildConfigJSON();
    }
+   uchar configBytes[];
+   StringToCharArray(config, configBytes);
 
-   gEngineHandle = nt_init(config);
+   gEngineHandle = nt_init(configBytes);
    if (gEngineHandle < 0) {
       Print("ERROR: Failed to initialize NautilusTrader engine (code: ", gEngineHandle, ")");
       return INIT_FAILED;
@@ -187,15 +197,15 @@ void OnTick() {
    if (InpStrategy == STRATEGY_ORDERBOOK_IMBALANCE) {
       MqlBookInfo book[];
       if (MarketBookGet(_Symbol, book)) {
-         double bidVol = 0, askVol = 0;
-         for (int i = 0; i < ArraySize(book); i++) {
-            if (book[i].type == BOOK_TYPE_BUY) { bidVol += book[i].volume; }
-            else if (book[i].type == BOOK_TYPE_SELL) { askVol += book[i].volume; }
-         }
+          double bidVol = 0, askVol = 0;
+          for (int i = 0; i < ArraySize(book); i++) {
+             if (book[i].type == BOOK_TYPE_BUY) { bidVol += (double)book[i].volume; }
+             else if (book[i].type == BOOK_TYPE_SELL) { askVol += (double)book[i].volume; }
+          }
          double totalVol = bidVol + askVol;
          if (totalVol > 0) {
             double imbalance = (bidVol - askVol) / totalVol;
-            signal = nt_on_imbalance(gEngineHandle, _Symbol, imbalance);
+            signal = nt_on_imbalance(gEngineHandle, gSymbolBytes, imbalance);
          }
       }
    }
@@ -212,8 +222,8 @@ void OnTick() {
          dir = gLastTickDir;
       }
 
-      double delta = dir * tick.volume;
-      signal = nt_on_orderflow(gEngineHandle, _Symbol, delta, last);
+      double delta = dir * (double)tick.volume;
+      signal = nt_on_orderflow(gEngineHandle, gSymbolBytes, delta, last);
 
       gLastTickPrice = last;
       gLastTickDir = dir;
@@ -227,23 +237,23 @@ void OnTick() {
             time_ns *= 1000000;
             signal = nt_on_bar(
                gEngineHandle,
-               _Symbol,
-               gSymbol.Open(),
+               gSymbolBytes,
+               iOpen(_Symbol, PERIOD_CURRENT, 0),
                iHigh(_Symbol, PERIOD_CURRENT, 0),
                iLow(_Symbol, PERIOD_CURRENT, 0),
-               gSymbol.Close(),
-               gSymbol.Volume(),
+               iClose(_Symbol, PERIOD_CURRENT, 0),
+               iVolume(_Symbol, PERIOD_CURRENT, 0),
                time_ns
             );
          }
       } else {
          signal = nt_on_tick(
-            gEngineHandle, _Symbol, tick.bid, tick.ask, tick.volume
+            gEngineHandle, gSymbolBytes, tick.bid, tick.ask, tick.volume
          );
       }
 
       // Query current signal (for non-imbalance/flow strategies)
-      int cs = nt_signal(gEngineHandle, _Symbol);
+      int cs = nt_signal(gEngineHandle, gSymbolBytes);
       if (!InpUseBarMode) { signal = cs; }
    }
 
@@ -476,10 +486,10 @@ int StringToTimeSeconds(string timeStr) {
 string BuildConfigJSON() {
    string strategyName;
    switch (InpStrategy) {
-      case STRATEGY_RSI:                  strategyName = "rsi"; break;
       case STRATEGY_ORDERBOOK_IMBALANCE:  strategyName = "orderbook_imbalance"; break;
-      case STRATEGY_ORDERFLOW:            strategyName = "orderflow"; break;
-      default:                            strategyName = "ema_cross"; break;
+      case STRATEGY_EMA_CROSS:            strategyName = "ema_cross"; break;
+      case STRATEGY_RSI:                  strategyName = "rsi"; break;
+      default:                            strategyName = "orderflow"; break;
    }
    string symbols = "[\"" + _Symbol + "\"]";
 
@@ -535,7 +545,9 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          gLastTickPrice = 0;
          gLastTickDir = 0;
          string config = BuildConfigJSON();
-         gEngineHandle = nt_init(config);
+         uchar cfgBytes[];
+         StringToCharArray(config, cfgBytes);
+         gEngineHandle = nt_init(cfgBytes);
          if (InpStrategy == STRATEGY_ORDERBOOK_IMBALANCE) {
             MarketBookAdd(_Symbol);
          }

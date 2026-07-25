@@ -423,10 +423,11 @@ pub struct OrderFlowStrategy {
 
 struct OrderFlowState {
     prices: Vec<f64>,
-    deltas: Vec<f64>,     // per-tick delta increments
+    deltas: Vec<f64>,
     idx: usize,
     filled: bool,
     current_signal: Signal,
+    signal_age: usize,
 }
 
 impl OrderFlowStrategy {
@@ -445,6 +446,7 @@ impl OrderFlowStrategy {
                     idx: 0,
                     filled: false,
                     current_signal: Signal::None,
+                    signal_age: 0,
                 },
             );
         }
@@ -476,7 +478,6 @@ impl TradingStrategy for OrderFlowStrategy {
 
     fn on_orderflow(&mut self, symbol: &str, delta: f64, price: f64) -> Signal {
         if let Some(state) = self.symbols.get_mut(symbol) {
-            // Store per-tick delta (not cumulative) so half-sums stay meaningful
             state.prices[state.idx] = price;
             state.deltas[state.idx] = delta;
             state.idx = (state.idx + 1) % self.divergence_lookback;
@@ -489,7 +490,8 @@ impl TradingStrategy for OrderFlowStrategy {
                 return Signal::None;
             }
 
-            // Compare NET delta sum over each half, not min/max of cumulative
+            state.signal_age = state.signal_age.saturating_add(1);
+
             let half = self.divergence_lookback / 2;
 
             let (pl1, ph1, sum1) = {
@@ -516,19 +518,39 @@ impl TradingStrategy for OrderFlowStrategy {
                 (pl, ph, s)
             };
 
-            // Bullish divergence: price makes lower low, net delta is higher
-            if pl2 < pl1 && sum2 > sum1 && state.current_signal != Signal::Buy {
-                state.current_signal = Signal::Buy;
-            }
-            // Bearish divergence: price makes higher high, net delta is lower
-            else if ph2 > ph1 && sum2 < sum1 && state.current_signal != Signal::Sell {
-                state.current_signal = Signal::Sell;
-            }
-            // Exit when price-delta alignment resumes
-            else if state.current_signal == Signal::Buy && !(pl2 < pl1 && sum2 > sum1) {
-                state.current_signal = Signal::Exit;
-            } else if state.current_signal == Signal::Sell && !(ph2 > ph1 && sum2 < sum1) {
-                state.current_signal = Signal::Exit;
+            let bullish = pl2 < pl1 && sum2 > sum1;
+            let bearish = ph2 > ph1 && sum2 < sum1;
+
+            // Enter on divergence; exit only on opposite divergence or timeout
+            match state.current_signal {
+                Signal::None | Signal::Exit => {
+                    if bullish {
+                        state.current_signal = Signal::Buy;
+                        state.signal_age = 0;
+                    } else if bearish {
+                        state.current_signal = Signal::Sell;
+                        state.signal_age = 0;
+                    }
+                }
+                Signal::Buy => {
+                    if bearish {
+                        state.current_signal = Signal::Sell;
+                        state.signal_age = 0;
+                    } else if state.signal_age >= self.divergence_lookback * 3 && !bullish {
+                        state.current_signal = Signal::Exit;
+                        state.signal_age = 0;
+                    }
+                }
+                Signal::Sell => {
+                    if bullish {
+                        state.current_signal = Signal::Buy;
+                        state.signal_age = 0;
+                    } else if state.signal_age >= self.divergence_lookback * 3 && !bearish {
+                        state.current_signal = Signal::Exit;
+                        state.signal_age = 0;
+                    }
+                }
+                _ => {}
             }
 
             state.current_signal
