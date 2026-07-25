@@ -71,8 +71,9 @@ input int               InpSmoothingPeriod = 20;     // Smoothing period
 input double            InpEntryThreshold  = 0.3;    // Entry threshold
 input double            InpExitThreshold   = 0.1;    // Exit threshold
 
-input group "=== Order Flow ==="
-input int               InpDivergenceLookback = 50;  // Divergence lookback (ticks)
+input group "=== Order Flow (Cumulative Delta) ==="
+input int               InpDivergenceLookback = 50;   // Tick window
+input double            InpDivergenceThreshold = 30.0;// Entry threshold (cumulative delta value)
 
 input group "=== Risk Management ==="
 input double            InpLotSize      = 0.1;        // Fixed lot size
@@ -503,7 +504,8 @@ string BuildConfigJSON() {
    config += "\"smoothing_period\":" + IntegerToString(InpSmoothingPeriod) + ",";
    config += "\"entry_threshold\":" + DoubleToString(InpEntryThreshold, 2) + ",";
    config += "\"exit_threshold\":" + DoubleToString(InpExitThreshold, 2) + ",";
-   config += "\"divergence_lookback\":" + IntegerToString(InpDivergenceLookback);
+   config += "\"divergence_lookback\":" + IntegerToString(InpDivergenceLookback) + ",";
+   config += "\"divergence_threshold\":" + DoubleToString(InpDivergenceThreshold, 1);
    config += "}";
 
    return config;

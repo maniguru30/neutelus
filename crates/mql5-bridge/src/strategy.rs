@@ -413,47 +413,56 @@ impl TradingStrategy for OrderBookImbalanceStrategy {
     }
 }
 
-// ── Order Flow Strategy ──────────────────────────────────────────
+// ── Order Flow Strategy (Cumulative Delta) ───────────────────────
+//
+// Tracks cumulative delta (buy volume - sell volume) over a sliding
+// window of ticks. Enters long when cum-delta exceeds a bullish
+// threshold, short when it drops below a bearish threshold, and
+// exits when it neutralizes back toward zero.
 
 pub struct OrderFlowStrategy {
     name: String,
     symbols: HashMap<String, OrderFlowState>,
-    divergence_lookback: usize,
+    lookback: usize,
+    entry_threshold: f64,
+    exit_threshold: f64,
 }
 
 struct OrderFlowState {
-    prices: Vec<f64>,
     deltas: Vec<f64>,
     idx: usize,
     filled: bool,
     current_signal: Signal,
-    signal_age: usize,
+    cum_delta: f64,
 }
 
 impl OrderFlowStrategy {
     pub fn new(
         symbols: Vec<String>,
-        divergence_lookback: usize,
-        _divergence_threshold: f64,
+        lookback: usize,
+        divergence_threshold: f64,
     ) -> Self {
+        let entry = if divergence_threshold > 0.0 { divergence_threshold } else { 30.0 };
+        let exit = entry * 0.3;
         let mut state = HashMap::new();
         for sym in &symbols {
             state.insert(
                 sym.clone(),
                 OrderFlowState {
-                    prices: vec![0.0; divergence_lookback],
-                    deltas: vec![0.0; divergence_lookback],
+                    deltas: vec![0.0; lookback],
                     idx: 0,
                     filled: false,
                     current_signal: Signal::None,
-                    signal_age: 0,
+                    cum_delta: 0.0,
                 },
             );
         }
         Self {
-            name: format!("OrderFlow_{}", divergence_lookback),
+            name: format!("OrderFlow_{}", lookback),
             symbols: state,
-            divergence_lookback,
+            lookback,
+            entry_threshold: entry,
+            exit_threshold: exit,
         }
     }
 }
@@ -476,11 +485,13 @@ impl TradingStrategy for OrderFlowStrategy {
         Signal::None
     }
 
-    fn on_orderflow(&mut self, symbol: &str, delta: f64, price: f64) -> Signal {
+    fn on_orderflow(&mut self, symbol: &str, delta: f64, _price: f64) -> Signal {
         if let Some(state) = self.symbols.get_mut(symbol) {
-            state.prices[state.idx] = price;
+            // Sliding window: remove oldest value, add newest
+            state.cum_delta -= state.deltas[state.idx];
             state.deltas[state.idx] = delta;
-            state.idx = (state.idx + 1) % self.divergence_lookback;
+            state.cum_delta += delta;
+            state.idx = (state.idx + 1) % self.lookback;
 
             if state.idx == 0 {
                 state.filled = true;
@@ -490,64 +501,22 @@ impl TradingStrategy for OrderFlowStrategy {
                 return Signal::None;
             }
 
-            state.signal_age = state.signal_age.saturating_add(1);
-
-            let half = self.divergence_lookback / 2;
-
-            let (pl1, ph1, sum1) = {
-                let (mut pl, mut ph, mut s) = (f64::INFINITY, f64::NEG_INFINITY, 0.0);
-                for i in 0..half {
-                    let pi = state.prices[(state.idx + i) % self.divergence_lookback];
-                    let di = state.deltas[(state.idx + i) % self.divergence_lookback];
-                    if pi < pl { pl = pi; }
-                    if pi > ph { ph = pi; }
-                    s += di;
-                }
-                (pl, ph, s)
-            };
-
-            let (pl2, ph2, sum2) = {
-                let (mut pl, mut ph, mut s) = (f64::INFINITY, f64::NEG_INFINITY, 0.0);
-                for i in half..self.divergence_lookback {
-                    let pi = state.prices[(state.idx + i) % self.divergence_lookback];
-                    let di = state.deltas[(state.idx + i) % self.divergence_lookback];
-                    if pi < pl { pl = pi; }
-                    if pi > ph { ph = pi; }
-                    s += di;
-                }
-                (pl, ph, s)
-            };
-
-            let bullish = pl2 < pl1 && sum2 > sum1;
-            let bearish = ph2 > ph1 && sum2 < sum1;
-
-            // Enter on divergence; exit only on opposite divergence or timeout
             match state.current_signal {
                 Signal::None | Signal::Exit => {
-                    if bullish {
+                    if state.cum_delta > self.entry_threshold {
                         state.current_signal = Signal::Buy;
-                        state.signal_age = 0;
-                    } else if bearish {
+                    } else if state.cum_delta < -self.entry_threshold {
                         state.current_signal = Signal::Sell;
-                        state.signal_age = 0;
                     }
                 }
                 Signal::Buy => {
-                    if bearish {
-                        state.current_signal = Signal::Sell;
-                        state.signal_age = 0;
-                    } else if state.signal_age >= self.divergence_lookback * 3 && !bullish {
+                    if state.cum_delta < self.exit_threshold {
                         state.current_signal = Signal::Exit;
-                        state.signal_age = 0;
                     }
                 }
                 Signal::Sell => {
-                    if bullish {
-                        state.current_signal = Signal::Buy;
-                        state.signal_age = 0;
-                    } else if state.signal_age >= self.divergence_lookback * 3 && !bearish {
+                    if state.cum_delta > -self.exit_threshold {
                         state.current_signal = Signal::Exit;
-                        state.signal_age = 0;
                     }
                 }
                 _ => {}

@@ -39,7 +39,7 @@ struct StrategyConfig {
 impl Default for StrategyConfig {
     fn default() -> Self {
         Self {
-            strategy_type: "ema_cross".to_string(),
+            strategy_type: "orderflow".to_string(),
             symbols: vec!["EURUSD".to_string()],
             fast_period: 12,
             slow_period: 26,
@@ -49,7 +49,7 @@ impl Default for StrategyConfig {
             entry_threshold: 0.3,
             exit_threshold: 0.1,
             divergence_lookback: 50,
-            divergence_threshold: 0.0,
+            divergence_threshold: 30.0,
         }
     }
 }
